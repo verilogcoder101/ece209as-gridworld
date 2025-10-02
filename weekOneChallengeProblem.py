@@ -1,5 +1,5 @@
 import random
-
+import numpy as np
 # Initialize robot position (center of the grid)
 robot_pos = [2, 0]  # [x, y] coordinates
 iceCream = [1,4]
@@ -47,6 +47,33 @@ def move_robot(intended_direction):
     elif actualdirection =="tay":
         robot_pos[0] = robot_pos[0]
         robot_pos[1] = robot_pos[1]
+def compute_o():
+    # Ensure inputs are numpy arrays
+    curr_pos = np.array(robot_pos)
+    R_D_pos = np.array(iceCream_pos)
+    R_S_pos = np.array(iceCream2_pos)
+
+    # Distances
+    d_D = np.linalg.norm(curr_pos - R_D_pos)  # Euclidean distance
+    d_S = np.linalg.norm(curr_pos - R_S_pos)
+
+    # Harmonic mean
+    if d_D == 0 or d_S == 0:
+        # Avoid division by zero if position coincides with one of the reference points
+        h = 0
+    else:
+        h = 2 / (1/d_D + 1/d_S)
+
+    # Probabilistic rounding
+    ceil_h = np.ceil(h)
+    floor_h = np.floor(h)
+    prob_floor = ceil_h - h  # probability of rounding down
+
+    if np.random.rand() < prob_floor:
+        print (int(floor_h))
+    else:
+        print (int(ceil_h))
+  
 
 def main():
     print("Robot Grid Movement System")
@@ -66,6 +93,7 @@ def main():
         else:
             print("Invalid command! Use: up, down, left, right, stay, quit")
         
+
 
 # Run the program
 if __name__ == "__main__":
