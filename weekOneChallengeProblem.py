@@ -2,8 +2,11 @@ import random
 import numpy as np
 # Initialize robot position (center of the grid)
 robot_pos = [2, 0]  # [x, y] coordinates
-iceCream = [1,4]
-iceCream2 = [1,2]
+iceCream = [2,4]
+iceCream2 = [2,2]
+forbidden_state = [[1,1],[2,1],[1,3],[2,3]]
+negativeReward = [[4,0],[4,1],[4,2],[4,3],[4,4]]
+
 def display_grid():
     """Display the 5x5 grid with the robot's current position"""
     print("\n" + "="*30)
@@ -16,18 +19,28 @@ def display_grid():
                 row += " I "  # Robot position:
             elif x == iceCream2[0] and y == iceCream2[1]:
                 row += " I "  # Robot position:
+            elif x == 1 and y == 1:
+                row += " X "  # Robot position:
+            elif x == 2 and y == 1:
+                row += " X "  # Robot position:
+            elif x == 1 and y == 3:
+                row += " X "  # Robot position:
+            elif x == 2 and y == 3:
+                row += " X "  # Robot position:
             else:
                 row += " . "  # Empty cell
         print(row)
     print(f"Robot position: ({robot_pos[0]}, {robot_pos[1]})")
     print("="*30)
 
+    
 def move_robot(intended_direction):
     """Move the robot with 30% chance of not following user input"""
     # 30% chance the robot disobeys
     if random.random() < 0.3:
         # Robot chooses a random direction (including staying)
         possible_actions = ["up", "down", "left", "right", "tay"]
+        possible_actions.remove(intended_direction)
         actual_direction = random.choice(possible_actions)
         print(f"Robot disobeyed! Instead of {intended_direction.upper()}, it went {actual_direction.upper()}")
     else:
@@ -35,8 +48,11 @@ def move_robot(intended_direction):
         actual_direction = intended_direction
         print(f"Robot followed command: {actual_direction.upper()}")
 
-    # Execute the actual movement
-    if actual_direction == "up" and robot_pos[1] > 0:
+    # Execute the actual movemendt
+    global robot_pos
+    old_pos = robot_pos.copy()
+
+    if actual_direction== "up" and robot_pos[1] > 0:
         robot_pos[1] -= 1
     elif actual_direction == "down" and robot_pos[1] < 4:
         robot_pos[1] += 1
@@ -47,6 +63,11 @@ def move_robot(intended_direction):
     elif actual_direction =="tay":
         robot_pos[0] = robot_pos[0]
         robot_pos[1] = robot_pos[1]
+    for state in forbidden_state:
+        if robot_pos == state:
+            robot_pos = old_pos.copy()
+            print("Uh oh, robot went to a forbidden place!")
+
 def compute_o():
     # Ensure inputs are numpy arrays
     curr_pos = np.array(robot_pos)
@@ -63,6 +84,7 @@ def compute_o():
         h = 0
     else:
         h = 2 / (1/d_D + 1/d_S)
+        print(h)
 
     # Probabilistic rounding
     ceil_h = np.ceil(h)
