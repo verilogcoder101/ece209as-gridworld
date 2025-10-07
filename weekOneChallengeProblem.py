@@ -50,8 +50,8 @@ def move_robot(intended_direction):
 def compute_o():
     # Ensure inputs are numpy arrays
     curr_pos = np.array(robot_pos)
-    R_D_pos = np.array(iceCream_pos)
-    R_S_pos = np.array(iceCream2_pos)
+    R_D_pos = np.array(iceCream)
+    R_S_pos = np.array(iceCream2)
 
     # Distances
     d_D = np.linalg.norm(curr_pos - R_D_pos)  # Euclidean distance
