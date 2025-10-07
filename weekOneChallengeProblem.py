@@ -27,7 +27,7 @@ def move_robot(intended_direction):
     # 30% chance the robot disobeys
     if random.random() < 0.3:
         # Robot chooses a random direction (including staying)
-        possible_actions = ["up", "down", "left", "right", "stay"]
+        possible_actions = ["up", "down", "left", "right", "tay"]
         actual_direction = random.choice(possible_actions)
         print(f"Robot disobeyed! Instead of {intended_direction.upper()}, it went {actual_direction.upper()}")
     else:
@@ -44,7 +44,7 @@ def move_robot(intended_direction):
         robot_pos[0] -= 1
     elif actual_direction == "right" and robot_pos[0] < 4:
         robot_pos[0] += 1
-    elif actualdirection =="tay":
+    elif actual_direction =="tay":
         robot_pos[0] = robot_pos[0]
         robot_pos[1] = robot_pos[1]
 def compute_o():
@@ -90,6 +90,7 @@ def main():
             break
         elif command in ["up", "down", "left", "right", "stay"]:
             move_robot(command)
+            compute_o()
         else:
             print("Invalid command! Use: up, down, left, right, stay, quit")
         
