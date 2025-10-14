@@ -109,13 +109,13 @@ def check_rewards():
     global r  # use the global reward variable
     
     if robot_pos in RW_loc:
-        r += RW_val
+        r = RW_val
         print(f"Robot reached RW location! Reward = {RW_val}. Total reward: {r}")
     elif robot_pos in RD_loc:
-        r += RD_val
+        r = RD_val
         print(f"Robot reached RD location! Reward = {RD_val}. Total reward: {r}")
     elif robot_pos in RS_loc:
-        r += RS_val
+        r = RS_val
         print(f"Robot reached RS location! Reward = {RS_val}. Total reward: {r}")
 
 def main():
