@@ -1,5 +1,6 @@
 import random
 import numpy as np
+
 # Initialize robot position (center of the grid)
 robot_pos = [2, 0]  # [x, y] coordinates
 iceCream = [2,4]
@@ -13,7 +14,11 @@ RS_loc = [[2,4]]
 RW_val = -1
 RD_val = 1
 RS_val = 10
-r = 0 
+
+# Transition and discount parameters
+Pe = 0.3   # Probability of error (disobedience)
+gamma = 0.7  # Discount factor
+
 
 def display_grid():
     """Display the 5x5 grid with robot, rewards, and forbidden states"""
@@ -41,26 +46,23 @@ def display_grid():
     print(f"Robot position: ({robot_pos[0]}, {robot_pos[1]})")
     print("="*30)
 
-    
-def move_robot(intended_direction):
+
+def move_robot(a):
     """Move the robot with 30% chance of not following user input"""
-    # 30% chance the robot disobeys
-    if random.random() < 0.3:
-        # Robot chooses a random direction (including staying)
-        possible_actions = ["up", "down", "left", "right", "tay"]
-        possible_actions.remove(intended_direction)
+    if random.random() < Pe:
+        # Robot disobeys and picks a random action
+        possible_actions = ["up", "down", "left", "right", "stay"]
+        possible_actions.remove(a)
         actual_direction = random.choice(possible_actions)
-        print(f"Robot disobeyed! Instead of {intended_direction.upper()}, it went {actual_direction.upper()}")
+        print(f"Robot disobeyed! Instead of {a.upper()}, it went {actual_direction.upper()}")
     else:
-        # Robot follows the command
-        actual_direction = intended_direction
+        actual_direction = a
         print(f"Robot followed command: {actual_direction.upper()}")
 
-    # Execute the actual movemendt
     global robot_pos
     old_pos = robot_pos.copy()
 
-    if actual_direction== "up" and robot_pos[1] > 0:
+    if actual_direction == "up" and robot_pos[1] > 0:
         robot_pos[1] -= 1
     elif actual_direction == "down" and robot_pos[1] < 4:
         robot_pos[1] += 1
@@ -68,27 +70,28 @@ def move_robot(intended_direction):
         robot_pos[0] -= 1
     elif actual_direction == "right" and robot_pos[0] < 4:
         robot_pos[0] += 1
-    elif actual_direction =="tay":
-        robot_pos[0] = robot_pos[0]
-        robot_pos[1] = robot_pos[1]
+    elif actual_direction == "stay":
+        pass  # No change
+
+    # Prevent movement into forbidden states
     for state in forbidden_state:
         if robot_pos == state:
             robot_pos = old_pos.copy()
             print("Uh oh, robot went to a forbidden place!")
 
+
 def compute_o():
-    # Ensure inputs are numpy arrays
+    """Compute a harmonic mean-based observation measure (for testing)"""
     curr_pos = np.array(robot_pos)
     R_D_pos = np.array(iceCream)
     R_S_pos = np.array(iceCream2)
 
     # Distances
-    d_D = np.linalg.norm(curr_pos - R_D_pos)  # Euclidean distance
+    d_D = np.linalg.norm(curr_pos - R_D_pos)
     d_S = np.linalg.norm(curr_pos - R_S_pos)
 
     # Harmonic mean
     if d_D == 0 or d_S == 0:
-        # Avoid division by zero if position coincides with one of the reference points
         h = 0
     else:
         h = 2 / (1/d_D + 1/d_S)
@@ -97,26 +100,55 @@ def compute_o():
     # Probabilistic rounding
     ceil_h = np.ceil(h)
     floor_h = np.floor(h)
-    prob_floor = ceil_h - h  # probability of rounding down
+    prob_floor = ceil_h - h
 
     if np.random.rand() < prob_floor:
-        print (int(floor_h))
+        print(int(floor_h))
     else:
-        print (int(ceil_h))
+        print(int(ceil_h))
 
-def check_rewards():
-    """Check if the robot has reached a reward location and update total reward."""
-    global r  # use the global reward variable
-    
+
+def r(robot_pos):
+    """
+    Return the reward at the given robot position.
+    Does not accumulate global rewards.
+    """
     if robot_pos in RW_loc:
-        r = RW_val
-        print(f"Robot reached RW location! Reward = {RW_val}. Total reward: {r}")
+        return RW_val
     elif robot_pos in RD_loc:
-        r = RD_val
-        print(f"Robot reached RD location! Reward = {RD_val}. Total reward: {r}")
+        return RD_val
     elif robot_pos in RS_loc:
-        r = RS_val
-        print(f"Robot reached RS location! Reward = {RS_val}. Total reward: {r}")
+        return RS_val
+    else:
+        return 0  # No reward at this position
+
+
+
+def P(next_state, robot_pos, a):
+    """
+    Compute the transition probability P(next_state | robot_pos, a).
+    next_state, robot_pos: [x, y] lists
+    a: action string ("up", "down", "left", "right", "stay")
+    """
+    intended_next = robot_pos.copy()
+
+    if a == "up" and robot_pos[1] > 0:
+        intended_next[1] -= 1
+    elif a == "down" and robot_pos[1] < 4:
+        intended_next[1] += 1
+    elif a == "left" and robot_pos[0] > 0:
+        intended_next[0] -= 1
+    elif a == "right" and robot_pos[0] < 4:
+        intended_next[0] += 1
+    elif a == "stay":
+        pass  # No change
+
+    # If intended next state equals the queried next state
+    if next_state == intended_next:
+        return 1 - Pe
+    else:
+        return Pe / 4
+
 
 def main():
     print("Robot Grid Movement System")
@@ -133,12 +165,13 @@ def main():
             break
         elif command in ["up", "down", "left", "right", "stay"]:
             move_robot(command)
-            check_rewards()
             compute_o()
+
+            # Example demonstration of P:
+            test_next = [robot_pos[0], robot_pos[1]]
+            print(f"P({test_next} | current={robot_pos}, action='{command}') = {P(test_next, robot_pos, command)}")
         else:
             print("Invalid command! Use: up, down, left, right, stay, quit")
-        
-
 
 # Run the program
 if __name__ == "__main__":
