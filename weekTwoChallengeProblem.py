@@ -149,30 +149,94 @@ def P(next_state, robot_pos, a):
     else:
         return Pe / 4
 
+def value_iteration():
+    """
+    Compute optimal value function V*(s) and policy pi*(s)
+    using Bellman optimality backups.
+    """
+    actions = ["up", "down", "left", "right", "stay"]
+    states = [[x, y] for x in range(5) for y in range(5)
+              if [x, y] not in forbidden_state]
 
-def main():
-    print("Robot Grid Movement System")
-    print("WARNING: Robot has 30% chance to disobey commands!")
-    print("Commands: up, down, left, right, stay, quit")
-    
+    # Initialize value function V_0(s) = 0 for all s
+    V = {tuple(s): 0.0 for s in states}
+    theta = 1e-6  # convergence threshold
+
     while True:
-        display_grid()
-        
-        command = input("\nEnter command: ").strip().lower()
-        
-        if command == "quit":
-            print("Goodbye!")
+        delta = 0.0
+        V_new = {}
+
+        # Bellman optimality backup: V_{i+1}(s) = max_a Q(s,a)
+        for s in states:
+            s_tup = tuple(s)
+            Q_values = []
+
+            for a in actions:
+                expected_value = 0.0
+                for s_next in states:
+                    p = P(s_next, s, a)
+                    expected_value += p * (r(s) + gamma * V[tuple(s_next)])
+                Q_values.append(expected_value)
+
+            V_new[s_tup] = max(Q_values)  # Bellman backup
+            delta = max(delta, abs(V_new[s_tup] - V[s_tup]))
+
+        V = V_new.copy()
+
+        # Stopping criterion
+        if delta < theta:
             break
-        elif command in ["up", "down", "left", "right", "stay"]:
-            move_robot(command)
-            compute_o()
 
-            # Example demonstration of P:
-            test_next = [robot_pos[0], robot_pos[1]]
-            print(f"P({test_next} | current={robot_pos}, action='{command}') = {P(test_next, robot_pos, command)}")
-        else:
-            print("Invalid command! Use: up, down, left, right, stay, quit")
+    # Derive Q*(s,a) and policy pi*(s)
+    Q_star = {}
+    policy = {}
 
-# Run the program
+    for s in states:
+        s_tup = tuple(s)
+        Q_star[s_tup] = {}
+
+        best_action = None
+        best_value = -float("inf")
+
+        for a in actions:
+            q_val = 0.0
+            for s_next in states:
+                p = P(s_next, s, a)
+                q_val += p * (r(s) + gamma * V[tuple(s_next)])
+            Q_star[s_tup][a] = q_val
+
+            if q_val > best_value:
+                best_value = q_val
+                best_action = a
+
+        policy[s_tup] = best_action
+
+    return V, Q_star, policy
+
+
 if __name__ == "__main__":
-    main()
+    print("Running Value Iteration...\n")
+    V_opt, Q_opt, policy_opt = value_iteration()
+
+    print("Optimal Value Function:")
+    for y in range(5):
+        row = ""
+        for x in range(5):
+            s = (x, y)
+            if [x, y] in forbidden_state:
+                row += "  X   "
+            else:
+                row += f"{V_opt[s]:5.2f} "
+        print(row)
+
+    print("\nOptimal Policy:")
+    for y in range(5):
+        row = ""
+        for x in range(5):
+            s = (x, y)
+            if [x, y] in forbidden_state:
+                row += "  X   "
+            else:
+                a = policy_opt[s]
+                row += f"{a[0].upper()}   "  # print first letter of action
+        print(row)
