@@ -168,33 +168,52 @@ class ParticleOnNumberline:
         
         return y_next, v_next
     
-    def compute_lqr_gain(self, Q, R):
+    def compute_lqr_gain(self, Q, R, H=200, tol=1e-8):
         """
-        Compute LQR gain matrix K by solving DARE.
-        
-        Parameters:
-        -----------
+        Compute LQR gain matrix K by iteratively solving the Riccati recursion.
+
+        Parameters
+        ----------
         Q : np.array (2x2)
             State cost matrix
         R : np.array (1x1) or float
             Control cost
-            
-        Returns:
-        --------
+        H : int
+            Maximum number of iterations (horizon length)
+        tol : float
+            Convergence tolerance for P
+
+        Returns
+        -------
         K : np.array (1x2)
             LQR gain matrix
         """
         if isinstance(R, (int, float)):
             R = np.array([[R]])
+
+        # Initialize
+        P = Q.copy()
         
-        # Solve Discrete-time Algebraic Riccati Equation
-        self.P = solve_discrete_are(self.A, self.B, Q, R)
-        
-        # Compute gain: K = (R + B'PB)^(-1) B'PA
-        BtP = self.B.T @ self.P
-        self.K = np.linalg.inv(R + BtP @ self.B) @ (BtP @ self.A)
-        
+        for i in range(H):
+            # Compute K from current P
+            K = np.linalg.inv(R + self.B.T @ P @ self.B) @ (self.B.T @ P @ self.A)
+
+            # Riccati recursion
+            P_new = Q + K.T @ R @ K + (self.A - self.B @ K).T @ P @ (self.A - self.B @ K)
+
+            # Check for convergence
+            if np.linalg.norm(P_new - P, ord='fro') < tol:
+                print(f"Converged at iteration {i}")
+                P = P_new
+                break
+
+            P = P_new
+
+        # Store results
+        self.P = P
+        self.K = np.linalg.inv(R + self.B.T @ P @ self.B) @ (self.B.T @ P @ self.A)
         return self.K
+
     
     def control(self, y, v, y_d=0.0, v_d=0.0):
         """
