@@ -1,105 +1,3 @@
-# import random
-# import numpy as np
-# # System parameters (global)
-# m = 1.0  # mass of the particle
-# phi = lambda y: 0  # potential field function (example: quadratic potential)
-
-# # Simulation parameters (global)
-# time_steps = 10
-# f_i = 0.5  # constant applied force
-
-# # Initial conditions (global)
-# y_0 = 0.0  # initial position
-# v_0 = 0.0  # initial velocity
-# v_max = 10.0  # maximum velocity
-# p_c = 0.1  # crash probability factor
-
-
-# class State:
-#     def __init__(self, y: float, v: float):
-#         self.y = y
-#         self.v = v
-
-#     def __str__(self):
-#         return f"State(y={self.y:.3g}, v={self.v:.3g})"
-
-
-# def update_state(state: State, f_i: float):
-#     """Update the state of the particle based on the state equations.
-
-#     Args:
-#         state: Current state (y, v)
-#         f_i: Applied force (input)
-#     """
-#     f_net = compute_net_force(f_i, state.y)
-#     state.y = update_position(state.y, state.v)
-#     state.v = update_velocity(state.v, f_net)
-
-    
-
-
-# def update_position(y: float, v: float) -> float:
-#     return y + v
-
-# def noisy_position(y: float) -> float:
-#     mu = 0
-#     sigma = 0.5 * y
-#     return y + random.gauss(mu, sigma)
-
-# def print_state(t, x: State):
-#     y_noisy = noisy_position(x.y)
-#     print(t, f"State(y={x.y:.3g}, v={x.v:.3g}, y_noisy={y_noisy:.3g})")
-
-
-# def update_velocity(v: float, f_net: float) -> float:
-#     """Update velocity: v'(t) = v(t) + (1/m) * f_net(t)
-
-#     For pure particle without potential field: f_net(t) = f_i(t)
-#     """
-#     crash_prob = p_c * abs(v)/v_max
-#     normal_dist = np.random.uniform()
-#     if normal_dist <= crash_prob:
-#         v_n = v + 1/m * f_net + random.gauss(0, 0.1 * v)
-#     else :
-#         v_n = 0
-#     return v_n
-
-
-# def compute_net_force(f_i: float, y: float) -> float:
-#     """Compute net force: f_net(t) = f_i(t) - d/dy(phi(y))
-
-#     Args:
-#         f_i: Applied force (input)
-#         y: Current position
-
-#     Returns:
-#         Net force acting on the particle
-#     """
-#     # Numerical derivative of phi with respect to y
-#     return f_i 
-
-
-# def main():
-#     # Initialize state
-#     state = State(y_0, v_0)
-
-#     print("Pure Particle Dynamics Simulation")
-#     print("=" * 50)
-#     print(f"Initial state: {state}")
-#     print(f"Mass: {m:.3g}, Applied force: {f_i:.3g}")
-#     print(f"Potential field: phi(y) = {phi(y_0):.3g} * y^2")
-#     print("=" * 50)
-
-#     # Simulation loop
-#     for t in range(time_steps):
-#         print_state(t, state)
-#         update_state(state, f_i)
-
-#     print(f"t={time_steps}: {state}")
-
-
-# if __name__ == "__main__":
-#     main()
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -177,22 +75,33 @@ plt.tight_layout()
 plt.show()
 
 # -------------------------------------------------------
-# Optional: plot one full trajectory (y, v, u)
+# Second figure: individual trajectories for each config
 # -------------------------------------------------------
-Q, R = np.diag([1, 1]), 1.0
-K, _ = compute_lqr_gain(A, B, Q, R)
-x_hist, u_hist = simulate(A, B, K, x0, sigma_d=sigma_d, T=50)
-t = np.arange(len(u_hist)+1)
+fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+axes = axes.flatten()
 
-plt.figure(figsize=(10, 6))
-plt.plot(t, x_hist[0, :], 'b-', label='Position y(t)')
-plt.plot(t, x_hist[1, :], 'g-', label='Velocity v(t)')
-plt.plot(t[:-1], u_hist, 'r--', label='Control u(t)')
-plt.axhline(0, color='k', linestyle=':', alpha=0.5)
-plt.title(f"State and Control Evolution (σ_d = {sigma_d})")
-plt.xlabel("Time step")
-plt.ylabel("Value")
-plt.legend()
-plt.grid(True, alpha=0.3)
+for idx, cfg in enumerate(configs):
+    Q, R = cfg["Q"], cfg["R"]
+    K, _ = compute_lqr_gain(A, B, Q, R)
+    x_hist, u_hist = simulate(A, B, K, x0, sigma_d=sigma_d, T=50)
+    t = np.arange(len(u_hist)+1)
+
+    ax = axes[idx]
+    ax.plot(t, x_hist[0, :], 'b-', label='Position y(t)')
+    ax.plot(t, x_hist[1, :], 'g-', label='Velocity v(t)')
+    ax.plot(t[:-1], u_hist, 'r--', label='Control u(t)')
+    ax.axhline(0, color='k', linestyle=':', alpha=0.5)
+
+    # Handle R as float or array
+    R_val = R if np.isscalar(R) else R[0,0]
+
+    ax.set_title(
+        f"{cfg['name']}\nσ_d={sigma_d}, Q=[{Q[0,0]}, {Q[1,1]}], R={R_val}"
+    )
+    ax.set_xlabel("Time step")
+    ax.set_ylabel("Value")
+    ax.legend(fontsize=8)
+    ax.grid(True, alpha=0.3)
+
 plt.tight_layout()
 plt.show()
