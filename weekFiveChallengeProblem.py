@@ -103,450 +103,96 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.linalg import solve_discrete_are
 
-class ParticleOnNumberline:
-    """
-    Week 5: LQR Control for Particle on Numberline
-    
-    Simplified system:
-    - No potential field (phi = 0)
-    - Only AWGN on velocity
-    - No input bounds
-    - Full state knowledge
-    """
-    
-    def __init__(self, dt=1.0, sigma_d=0.1):
-        """
-        Initialize the system.
-        
-        Parameters:
-        -----------
-        dt : float
-            Time step for discrete dynamics
-        sigma_d : float
-            Standard deviation of velocity noise
-        """
-        self.dt = dt
-        self.sigma_d = sigma_d
-        
-        # System matrices: x[t+1] = Ax[t] + Bu[t] + noise
-        # State x = [y, v]'
-        self.A = np.array([[1, dt],
-                           [0, 1]])
-        self.B = np.array([[0],
-                           [dt]])
-        
-        self.K = None  # LQR gain matrix
-        self.P = None  # Solution to DARE
-        
-    def dynamics(self, y, v, f_i, add_noise=True):
-        """
-        System dynamics with optional noise.
-        
-        Parameters:
-        -----------
-        y : float
-            Current position
-        v : float
-            Current velocity
-        f_i : float
-            Input force
-        add_noise : bool
-            Whether to add process noise
-            
-        Returns:
-        --------
-        y_next, v_next : tuple of floats
-        """
-        # Process noise
-        d = np.random.normal(0, self.sigma_d) if add_noise else 0
-        
-        # Discrete dynamics
-        y_next = y + v * self.dt
-        v_next = v + f_i * self.dt + d
-        
-        return y_next, v_next
-    
-    def compute_lqr_gain(self, Q, R, H=200, tol=1e-8):
-        """
-        Compute LQR gain matrix K by iteratively solving the Riccati recursion.
+# -------------------------------------------------------
+# Compute LQR gain using explicit Riccati recursion
+# -------------------------------------------------------
+def compute_lqr_gain(A, B, Q, R, H=200, tol=1e-8):
+    if isinstance(R, (int, float)):
+        R = np.array([[R]])
+    P = Q.copy()
 
-        Parameters
-        ----------
-        Q : np.array (2x2)
-            State cost matrix
-        R : np.array (1x1) or float
-            Control cost
-        H : int
-            Maximum number of iterations (horizon length)
-        tol : float
-            Convergence tolerance for P
+    for _ in range(H):
+        K = np.linalg.inv(R + B.T @ P @ B) @ (B.T @ P @ A)
+        P_new = Q + K.T @ R @ K + (A - B @ K).T @ P @ (A - B @ K)
+        if np.linalg.norm(P_new - P, ord='fro') < tol:
+            break
+        P = P_new
 
-        Returns
-        -------
-        K : np.array (1x2)
-            LQR gain matrix
-        """
-        if isinstance(R, (int, float)):
-            R = np.array([[R]])
+    return K, P
 
-        # Initialize
-        P = Q.copy()
-        
-        for i in range(H):
-            # Compute K from current P
-            K = np.linalg.inv(R + self.B.T @ P @ self.B) @ (self.B.T @ P @ self.A)
+# -------------------------------------------------------
+# Simulate x[t+1] = A x[t] + B u[t] + noise
+# with noise only on the velocity component
+# -------------------------------------------------------
+def simulate(A, B, K, x0, sigma_d=0.1, T=50):
+    n = A.shape[0]
+    x_hist = np.zeros((n, T+1))
+    u_hist = np.zeros(T)
+    x = x0.copy()
 
-            # Riccati recursion
-            P_new = Q + K.T @ R @ K + (self.A - self.B @ K).T @ P @ (self.A - self.B @ K)
+    for t in range(T):
+        u = -K @ x
+        noise = np.array([[0], [np.random.normal(0, sigma_d)]])  # AWGN on velocity
+        x = A @ x + B @ u + noise
+        x_hist[:, t] = x.flatten()
+        u_hist[t] = u
+    x_hist[:, T] = x.flatten()
 
-            # Check for convergence
-            if np.linalg.norm(P_new - P, ord='fro') < tol:
-                print(f"Converged at iteration {i}")
-                P = P_new
-                break
+    return x_hist, u_hist
 
-            P = P_new
+# -------------------------------------------------------
+# Main experiment
+# -------------------------------------------------------
+A = np.array([[1, 1],
+              [0, 1]])
+B = np.array([[0],
+              [1]])
 
-        # Store results
-        self.P = P
-        self.K = np.linalg.inv(R + self.B.T @ P @ self.B) @ (self.B.T @ P @ self.A)
-        return self.K
+x0 = np.array([[5.0],
+               [2.0]])
 
-    
-    def control(self, y, v, y_d=0.0, v_d=0.0):
-        """
-        Compute LQR control input.
-        
-        Parameters:
-        -----------
-        y, v : float
-            Current state
-        y_d, v_d : float
-            Desired state
-            
-        Returns:
-        --------
-        u : float
-            Control input
-        """
-        if self.K is None:
-            raise ValueError("LQR gain not computed. Call compute_lqr_gain() first.")
-        
-        # State error
-        x_error = np.array([[y - y_d],
-                            [v - v_d]])
-        
-        # Control law: u = -Kx
-        u = -(self.K @ x_error)[0, 0]
-        
-        return u
-    
-    def simulate(self, y0, v0, y_d=0.0, v_d=0.0, T=100):
-        """
-        Simulate closed-loop system with LQR control.
-        
-        Parameters:
-        -----------
-        y0, v0 : float
-            Initial state
-        y_d, v_d : float
-            Desired state
-        T : int
-            Number of time steps
-            
-        Returns:
-        --------
-        trajectory : dict
-            Dictionary containing time series of state and control
-        """
-        if self.K is None:
-            raise ValueError("LQR gain not computed. Call compute_lqr_gain() first.")
-        
-        # Initialize storage
-        trajectory = {
-            't': np.zeros(T+1),
-            'y': np.zeros(T+1),
-            'v': np.zeros(T+1),
-            'u': np.zeros(T+1)
-        }
-        
-        # Initial conditions
-        y, v = y0, v0
-        trajectory['y'][0] = y
-        trajectory['v'][0] = v
-        
-        # Simulate
-        for t in range(T):
-            trajectory['t'][t] = t
-            
-            # Compute control
-            u = self.control(y, v, y_d, v_d)
-            trajectory['u'][t] = u
-            
-            # Apply dynamics
-            y, v = self.dynamics(y, v, u)
-            
-            # Store
-            trajectory['y'][t+1] = y
-            trajectory['v'][t+1] = v
-        
-        trajectory['t'][T] = T
-        
-        return trajectory
-    
-    def plot_results(self, trajectory, y_d=0.0, v_d=0.0):
-        """
-        Plot simulation results.
-        
-        Parameters:
-        -----------
-        trajectory : dict
-            Trajectory data from simulate()
-        y_d, v_d : float
-            Desired state for reference lines
-        """
-        fig, axes = plt.subplots(3, 1, figsize=(10, 8))
-        
-        # Position
-        axes[0].plot(trajectory['t'], trajectory['y'], 'b-', label='Position y(t)', linewidth=2)
-        axes[0].axhline(y=y_d, color='b', linestyle='--', alpha=0.5, label=f'Goal: y_d = {y_d}')
-        axes[0].set_ylabel('Position (y)')
-        axes[0].grid(True, alpha=0.3)
-        axes[0].legend()
-        axes[0].set_title('LQR Control: Particle on Numberline')
-        
-        # Velocity
-        axes[1].plot(trajectory['t'], trajectory['v'], 'g-', label='Velocity v(t)', linewidth=2)
-        axes[1].axhline(y=v_d, color='g', linestyle='--', alpha=0.5, label=f'Goal: v_d = {v_d}')
-        axes[1].set_ylabel('Velocity (v)')
-        axes[1].grid(True, alpha=0.3)
-        axes[1].legend()
-        
-        # Control input
-        axes[2].plot(trajectory['t'][:-1], trajectory['u'][:-1], 'r-', label='Control input u(t)', linewidth=2)
-        axes[2].set_ylabel('Force (f_i)')
-        axes[2].set_xlabel('Time Step')
-        axes[2].grid(True, alpha=0.3)
-        axes[2].legend()
-        
-        plt.tight_layout()
-        return fig
+sigma_d = 0.1  # process noise on velocity
 
+configs = [
+    {"name": "Q = [1,1], R = 1 (Balanced Q & R)", "Q": np.diag([1, 1]), "R": 1.0},
+    {"name": "Q = [10,10], R = 0.1 (High Q & Low R)", "Q": np.diag([10, 10]), "R": 0.1},
+    {"name": "Q = [1,1], R = 10 (Low Q & High R)", "Q": np.diag([1, 1]), "R": 10.0},
+    {"name": "Q = [10,1], R = 1 (Position-Prioritized Q)", "Q": np.diag([10, 1]), "R": 1.0}
+]
 
-# ============================================================================
-# EXAMPLE USAGE AND EXPERIMENTS
-# ============================================================================
+plt.figure(figsize=(10, 8))
+for cfg in configs:
+    K, _ = compute_lqr_gain(A, B, cfg["Q"], cfg["R"])
+    x_hist, u_hist = simulate(A, B, K, x0, sigma_d=sigma_d, T=50)
+    t = np.arange(len(u_hist))
+    plt.plot(t, u_hist, label=f"{cfg['name']}")
 
-def part1_drive_to_origin():
-    """
-    Part 1: Drive system to rest at origin (y_d = 0, v_d = 0)
-    Explore effects of varying Q and R.
-    """
-    print("=" * 70)
-    print("PART 1: Drive to Rest at Origin")
-    print("=" * 70)
-    
-    system = ParticleOnNumberline(dt=1.0, sigma_d=0.1)
-    
-    # Initial conditions
-    y0, v0 = 5.0, 2.0
-    y_d, v_d = 0.0, 0.0
-    
-    # Different Q and R configurations
-    configs = [
-        {"name": "Balanced", "Q_y": 1.0, "Q_v": 1.0, "R": 1.0},
-        {"name": "High state cost (aggressive)", "Q_y": 10.0, "Q_v": 10.0, "R": 0.1},
-        {"name": "High control cost (smooth)", "Q_y": 1.0, "Q_v": 1.0, "R": 10.0},
-        {"name": "Prioritize position", "Q_y": 10.0, "Q_v": 1.0, "R": 1.0},
-    ]
-    
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    axes = axes.flatten()
-    
-    for idx, config in enumerate(configs):
-        print(f"\n{config['name']}: Q_y={config['Q_y']}, Q_v={config['Q_v']}, R={config['R']}")
-        
-        # Setup LQR
-        Q = np.diag([config['Q_y'], config['Q_v']])
-        R = config['R']
-        K = system.compute_lqr_gain(Q, R)
-        
-        print(f"  Gain K = [{K[0,0]:.4f}, {K[0,1]:.4f}]")
-        
-        # Simulate
-        traj = system.simulate(y0, v0, y_d, v_d, T=50)
-        
-        # Calculate max control
-        max_u = np.max(np.abs(traj['u']))
-        print(f"  Max |u| = {max_u:.4f}")
-        
-        # Plot on subplot
-        ax = axes[idx]
-        ax.plot(traj['t'], traj['y'], 'b-', label='y(t)', linewidth=2)
-        ax.plot(traj['t'], traj['v'], 'g-', label='v(t)', linewidth=2)
-        ax.plot(traj['t'][:-1], traj['u'][:-1], 'r--', label='u(t)', linewidth=1.5, alpha=0.7)
-        ax.axhline(y=0, color='k', linestyle=':', alpha=0.3)
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Value')
-        ax.set_title(f"{config['name']}\nK=[{K[0,0]:.2f}, {K[0,1]:.2f}], max|u|={max_u:.2f}")
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig('lqr_part1_comparison.png', dpi=150)
-    print("\nPlot saved as 'lqr_part1_comparison.png'")
-    plt.show()
+plt.title(f"Control Input u(t) with σ_d = {sigma_d}")
+plt.xlabel("Time step")
+plt.ylabel("Control input u")
+plt.grid(True, alpha=0.3)
+plt.legend()
+plt.tight_layout()
+plt.show()
 
+# -------------------------------------------------------
+# Optional: plot one full trajectory (y, v, u)
+# -------------------------------------------------------
+Q, R = np.diag([1, 1]), 1.0
+K, _ = compute_lqr_gain(A, B, Q, R)
+x_hist, u_hist = simulate(A, B, K, x0, sigma_d=sigma_d, T=50)
+t = np.arange(len(u_hist)+1)
 
-def part2_bounded_control():
-    """
-    Part 2: Predict Q, R to ensure |f_i| < 1 for bounded initial states.
-    Given |y[0]| <= y_max, v[0] = 0, find Q, R s.t. |u[t]| < 1 for all t.
-    """
-    print("\n" + "=" * 70)
-    print("PART 2: Bounded Control Input")
-    print("=" * 70)
-    
-    system = ParticleOnNumberline(dt=1.0, sigma_d=0.0)  # No noise for analysis
-    
-    y_max = 5.0
-    y0_values = [y_max, y_max/2, -y_max]  # Test different initial positions
-    v0 = 0.0
-    y_d, v_d = 0.0, 0.0
-    
-    # Try different R values (increasing control cost)
-    R_values = [0.1, 1.0, 5.0, 10.0]
-    Q_y, Q_v = 1.0, 1.0
-    Q = np.diag([Q_y, Q_v])
-    
-    print(f"\nTesting with |y[0]| <= {y_max}, v[0] = 0")
-    print(f"Fixed Q: diag([{Q_y}, {Q_v}])")
-    print("\nVarying R to find bounds on |u|:")
-    print("-" * 70)
-    
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    axes = axes.flatten()
-    
-    for idx, R in enumerate(R_values):
-        K = system.compute_lqr_gain(Q, R)
-        
-        max_controls = []
-        
-        ax = axes[idx]
-        
-        for y0 in y0_values:
-            traj = system.simulate(y0, v0, y_d, v_d, T=50)
-            max_u = np.max(np.abs(traj['u']))
-            max_controls.append(max_u)
-            
-            ax.plot(traj['t'][:-1], traj['u'][:-1], label=f'y[0]={y0:.1f}, max|u|={max_u:.3f}')
-        
-        # Show constraint
-        ax.axhline(y=1, color='r', linestyle='--', linewidth=2, label='Constraint |u| < 1')
-        ax.axhline(y=-1, color='r', linestyle='--', linewidth=2)
-        
-        overall_max = np.max(max_controls)
-        satisfies = "✓ SATISFIES" if overall_max < 1.0 else "✗ VIOLATES"
-        
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Control Input u')
-        ax.set_title(f'R = {R:.1f}, K=[{K[0,0]:.3f}, {K[0,1]:.3f}]\nmax|u|={overall_max:.3f} {satisfies}')
-        ax.legend(fontsize=8)
-        ax.grid(True, alpha=0.3)
-        ax.set_ylim([-2, 2])
-        
-        print(f"R = {R:5.1f}: K = [{K[0,0]:7.4f}, {K[0,1]:7.4f}], max|u| = {overall_max:.4f} {satisfies}")
-    
-    plt.tight_layout()
-    plt.savefig('lqr_part2_bounded_control.png', dpi=150)
-    print("\nPlot saved as 'lqr_part2_bounded_control.png'")
-    plt.show()
-    
-    print("\n" + "=" * 70)
-    print("ANALYTICAL PREDICTION:")
-    print("For worst case y[0] = y_max, v[0] = 0, the initial control is:")
-    print("  u[0] = -K @ [y_max, 0]' = -K[0,0] * y_max")
-    print(f"To ensure |u[0]| < 1, we need: K[0,0] * {y_max} < 1")
-    print(f"Therefore: K[0,0] < {1/y_max:.3f}")
-    print("\nIncrease R to reduce K[0,0]. From results above, R >= 5.0 works.")
-    print("=" * 70)
-
-
-def additional_experiments():
-    """
-    Additional experiments for deeper understanding.
-    """
-    print("\n" + "=" * 70)
-    print("ADDITIONAL EXPERIMENTS")
-    print("=" * 70)
-    
-    system = ParticleOnNumberline(dt=1.0, sigma_d=0.1)
-    
-    # Experiment: Track non-zero goal
-    print("\nExperiment: Track non-zero goal state")
-    y0, v0 = 0.0, 0.0
-    y_d, v_d = 10.0, 1.0
-    
-    Q = np.diag([1.0, 1.0])
-    R = 1.0
-    system.compute_lqr_gain(Q, R)
-    
-    traj = system.simulate(y0, v0, y_d, v_d, T=80)
-    
-    fig = system.plot_results(traj, y_d, v_d)
-    plt.savefig('lqr_nonzero_goal.png', dpi=150)
-    print("Plot saved as 'lqr_nonzero_goal.png'")
-    plt.show()
-    
-    # Experiment: Effect of noise
-    print("\nExperiment: Effect of process noise")
-    noise_levels = [0.0, 0.05, 0.1, 0.2]
-    
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    axes = axes.flatten()
-    
-    Q = np.diag([1.0, 1.0])
-    R = 1.0
-    
-    for idx, sigma in enumerate(noise_levels):
-        system_noise = ParticleOnNumberline(dt=1.0, sigma_d=sigma)
-        system_noise.compute_lqr_gain(Q, R)
-        
-        traj = system_noise.simulate(5.0, 2.0, 0.0, 0.0, T=50)
-        
-        ax = axes[idx]
-        ax.plot(traj['t'], traj['y'], 'b-', label='Position y', linewidth=2)
-        ax.plot(traj['t'], traj['v'], 'g-', label='Velocity v', linewidth=2)
-        ax.axhline(y=0, color='k', linestyle=':', alpha=0.3)
-        ax.set_xlabel('Time Step')
-        ax.set_ylabel('Value')
-        ax.set_title(f'Process Noise σ_d = {sigma}')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-    
-    plt.tight_layout()
-    plt.savefig('lqr_noise_effect.png', dpi=150)
-    print("Plot saved as 'lqr_noise_effect.png'")
-    plt.show()
-
-
-# ============================================================================
-# MAIN EXECUTION
-# ============================================================================
-
-if __name__ == "__main__":
-    print("\n" + "=" * 70)
-    print("ECE209AS - Week 5: Linear Quadratic Regulator")
-    print("Particle on Numberline System")
-    print("=" * 70)
-    
-    # Run experiments
-    part1_drive_to_origin()
-    part2_bounded_control()
-    additional_experiments()
-    
-    print("\n" + "=" * 70)
-    print("All experiments completed!")
-    print("=" * 70)
+plt.figure(figsize=(10, 6))
+plt.plot(t, x_hist[0, :], 'b-', label='Position y(t)')
+plt.plot(t, x_hist[1, :], 'g-', label='Velocity v(t)')
+plt.plot(t[:-1], u_hist, 'r--', label='Control u(t)')
+plt.axhline(0, color='k', linestyle=':', alpha=0.5)
+plt.title(f"State and Control Evolution (σ_d = {sigma_d})")
+plt.xlabel("Time step")
+plt.ylabel("Value")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
