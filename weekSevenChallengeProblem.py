@@ -7,12 +7,12 @@ iceCream2 = [2,2]
 
 # Define rewards and forbidden states
 forbidden_state = [[1,1],[2,1],[1,3],[2,3]]
-RW_loc = [[4,0],[4,1],[4,2],[4,3],[4,4]]
-RD_loc = [[2,2]]
-RS_loc = [[2,4]]
-RW_val = -1
-RD_val = 1
-RS_val = 10
+# Define reward locations:
+reward_locations = {
+    (4,0): -1, (4,1): -1, (4,2): -1, (4,3): -1, (4,4): -1,  # RW locations
+    (2,2): 1,                                              # RD location
+    (2,4): 10                                              # RS location
+}
 r = 0 
 Pe = 0.3
 
@@ -27,12 +27,12 @@ def display_grid():
             # Priority: Robot overrides any other symbol
             if pos == robot_pos:
                 cell = " R "
-            elif pos in RD_loc:
-                cell = "RD "
-            elif pos in RS_loc:
-                cell = "RS "
-            elif pos in RW_loc:
-                cell = "RW "
+            elif tuple(pos) in reward_locations:
+                val = reward_locations[tuple(pos)]
+                if val > 0:
+                    cell = " R+ "  # positive reward marker
+                else:
+                    cell = " R- "  # negative reward marker
             elif pos in forbidden_state:
                 cell = " X "
             else:
@@ -105,8 +105,13 @@ def P(next_state, s_prev, a):
 def compute_o():
     # Ensure inputs are numpy arrays
     curr_pos = np.array(robot_pos)
-    R_D_pos = np.array(iceCream)
-    R_S_pos = np.array(iceCream2)
+    sorted_states = sorted(reward_locations,
+                            key=lambda k: reward_locations[k],
+                            reverse=True)
+
+    R_S_pos = sorted_states[0]  # max reward
+    R_D_pos = sorted_states[1]  # second max reward
+
 
     # Distances
     d_D = np.linalg.norm(curr_pos - R_D_pos)  # Euclidean distance
@@ -132,24 +137,26 @@ def compute_o():
     return o
 
 def check_rewards():
-    """Check if the robot has reached a reward location and update total reward."""
-    global r  # use the global reward variable
-    
-    if robot_pos in RW_loc:
-        r = RW_val
-        print(f"Robot reached RW location! Reward = {RW_val}. Total reward: {r}")
-    elif robot_pos in RD_loc:
-        r = RD_val
-        print(f"Robot reached RD location! Reward = {RD_val}. Total reward: {r}")
-    elif robot_pos in RS_loc:
-        r = RS_val
-        print(f"Robot reached RS location! Reward = {RS_val}. Total reward: {r}")
+    global r
+    pos = tuple(robot_pos)
+    if pos in reward_locations:
+        r = reward_locations[pos]
+    else:
+        r = 0  # no reward at this step
+    print(f"Received reward: {r}")
+
 
 def P_o_given_s(o, s):
     # Convert to numpy arrays for distance math
     curr_pos = np.array(s)
-    R_D_pos = np.array(iceCream)
-    R_S_pos = np.array(iceCream2)
+    # Sort states by reward in descending order
+    sorted_states = sorted(reward_locations,
+                            key=lambda k: reward_locations[k],
+                            reverse=True)
+
+    R_S_pos = sorted_states[0]  # max reward
+    R_D_pos = sorted_states[1]  # second max reward
+
 
     # Compute harmonic mean h = 2 / (d_D^-1 + d_S^-1)
     d_D = np.linalg.norm(curr_pos - R_D_pos)
