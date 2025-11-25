@@ -12,12 +12,12 @@ RW_loc = [[4,0],[4,1],[4,2],[4,3],[4,4]]
 RD_loc = [[2,2]]
 RS_loc = [[2,4]]
 RW_val = -1
-RD_val = 1
-RS_val = 10
+RD_val = 10
+RS_val = 1
 
 # Transition and discount parameters
 Pe = 0.3   # Probability of error (disobedience)
-gamma = 0.7  # Discount factor
+gamma = 0.2  # Discount factor
 
 
 def display_grid():
@@ -122,32 +122,56 @@ def r(robot_pos):
     else:
         return 0  # No reward at this position
 
-
-
 def P(next_state, robot_pos, a):
     """
-    Compute the transition probability P(next_state | robot_pos, a).
-    next_state, robot_pos: [x, y] lists
-    a: action string ("up", "down", "left", "right", "stay")
+    P(next_state | robot_pos, a) with local stochasticity:
+    - With prob 1 - Pe, take the commanded action a.
+    - With prob Pe, take one of the 4 other actions uniformly at random.
+    - Invalid moves (off-grid or into forbidden) result in staying in place.
     """
-    intended_next = robot_pos.copy()
+    actions = ["up", "down", "left", "right", "stay"]
 
-    if a == "up" and robot_pos[1] > 0:
-        intended_next[1] -= 1
-    elif a == "down" and robot_pos[1] < 4:
-        intended_next[1] += 1
-    elif a == "left" and robot_pos[0] > 0:
-        intended_next[0] -= 1
-    elif a == "right" and robot_pos[0] < 4:
-        intended_next[0] += 1
-    elif a == "stay":
-        pass  # No change
+    def step(pos, act):
+        x, y = pos
+        nx, ny = x, y
 
-    # If intended next state equals the queried next state
+        if act == "up" and y > 0:
+            ny -= 1
+        elif act == "down" and y < 4:
+            ny += 1
+        elif act == "left" and x > 0:
+            nx -= 1
+        elif act == "right" and x < 4:
+            nx += 1
+        elif act == "stay":
+            pass  # no change
+
+        candidate = [nx, ny]
+
+        # Optional: keep this if you want forbidden states to act like walls
+        if candidate in forbidden_state:
+            return pos  # bounce back
+
+        return candidate
+
+    prob = 0.0
+
+    # Intended move
+    intended_next = step(robot_pos, a)
     if next_state == intended_next:
-        return 1 - Pe
-    else:
-        return Pe / 4
+        prob += 1 - Pe
+
+    # Error moves: any action except the commanded one
+    other_actions = [act for act in actions if act != a]
+    err_prob = Pe / len(other_actions)
+
+    for err_act in other_actions:
+        err_next = step(robot_pos, err_act)
+        if next_state == err_next:
+            prob += err_prob
+
+    return prob
+
 
 def value_iteration():
     """
@@ -235,7 +259,7 @@ if __name__ == "__main__":
         for x in range(5):
             s = (x, y)
             if [x, y] in forbidden_state:
-                row += "  X   "
+                row += "X   "
             else:
                 a = policy_opt[s]
                 row += f"{a[0].upper()}   "  # print first letter of action
