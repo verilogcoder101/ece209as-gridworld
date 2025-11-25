@@ -1,266 +1,203 @@
-import random
 import numpy as np
+from itertools import product
 
-# Initialize robot position (center of the grid)
-robot_pos = [2, 0]  # [x, y] coordinates
-iceCream = [2,4]
-iceCream2 = [2,2]
+# ------------------------------
+# Environment definitions
+# ------------------------------
 
-# Define rewards and forbidden states
 forbidden_state = [[1,1],[2,1],[1,3],[2,3]]
 RW_loc = [[4,0],[4,1],[4,2],[4,3],[4,4]]
 RD_loc = [[2,2]]
 RS_loc = [[2,4]]
+
 RW_val = -1
 RD_val = 1
 RS_val = 10
+R_crash = -1  # collision penalty
 
-# Transition and discount parameters
-Pe = 0.3   # Probability of error (disobedience)
-gamma = 0.2  # Discount factor
+Pe = 0.3   # probability of disobedience
+gamma = 0.2  # discount factor
 
+actions = ["up", "down", "left", "right", "stay"]
 
-def display_grid():
-    """Display the 5x5 grid with robot, rewards, and forbidden states"""
-    print("\n" + "="*30)
-    for y in range(5):
-        row = ""
-        for x in range(5):
-            pos = [x, y]
+# ------------------------------
+# Helper: single-robot movement
+# ------------------------------
 
-            # Priority: Robot overrides any other symbol
-            if pos == robot_pos:
-                cell = " R "
-            elif pos in RD_loc:
-                cell = "RD "
-            elif pos in RS_loc:
-                cell = "RS "
-            elif pos in RW_loc:
-                cell = "RW "
-            elif pos in forbidden_state:
-                cell = " X "
-            else:
-                cell = " . "
-            row += cell
-        print(row)
-    print(f"Robot position: ({robot_pos[0]}, {robot_pos[1]})")
-    print("="*30)
+def step_single(pos, act):
+    """Return next position for a single robot applying action act."""
+    x, y = pos
+    nx, ny = x, y
 
+    if act == "up" and y > 0:
+        ny -= 1
+    elif act == "down" and y < 4:
+        ny += 1
+    elif act == "left" and x > 0:
+        nx -= 1
+    elif act == "right" and x < 4:
+        nx += 1
+    elif act == "stay":
+        pass  # no change
 
-def move_robot(a):
-    """Move the robot with 30% chance of not following user input"""
-    if random.random() < Pe:
-        # Robot disobeys and picks a random action
-        possible_actions = ["up", "down", "left", "right", "stay"]
-        possible_actions.remove(a)
-        actual_direction = random.choice(possible_actions)
-        print(f"Robot disobeyed! Instead of {a.upper()}, it went {actual_direction.upper()}")
-    else:
-        actual_direction = a
-        print(f"Robot followed command: {actual_direction.upper()}")
+    candidate = [nx, ny]
 
-    global robot_pos
-    old_pos = robot_pos.copy()
+    # Treat forbidden states as walls
+    if candidate in forbidden_state:
+        return tuple(pos)
 
-    if actual_direction == "up" and robot_pos[1] > 0:
-        robot_pos[1] -= 1
-    elif actual_direction == "down" and robot_pos[1] < 4:
-        robot_pos[1] += 1
-    elif actual_direction == "left" and robot_pos[0] > 0:
-        robot_pos[0] -= 1
-    elif actual_direction == "right" and robot_pos[0] < 4:
-        robot_pos[0] += 1
-    elif actual_direction == "stay":
-        pass  # No change
+    return tuple(candidate)
 
-    # Prevent movement into forbidden states
-    for state in forbidden_state:
-        if robot_pos == state:
-            robot_pos = old_pos.copy()
-            print("Uh oh, robot went to a forbidden place!")
+# ------------------------------
+# Transition model P_single
+# ------------------------------
 
-
-def compute_o():
-    """Compute a harmonic mean-based observation measure (for testing)"""
-    curr_pos = np.array(robot_pos)
-    R_D_pos = np.array(iceCream)
-    R_S_pos = np.array(iceCream2)
-
-    # Distances
-    d_D = np.linalg.norm(curr_pos - R_D_pos)
-    d_S = np.linalg.norm(curr_pos - R_S_pos)
-
-    # Harmonic mean
-    if d_D == 0 or d_S == 0:
-        h = 0
-    else:
-        h = 2 / (1/d_D + 1/d_S)
-        print(h)
-
-    # Probabilistic rounding
-    ceil_h = np.ceil(h)
-    floor_h = np.floor(h)
-    prob_floor = ceil_h - h
-
-    if np.random.rand() < prob_floor:
-        print(int(floor_h))
-    else:
-        print(int(ceil_h))
-
-
-def r(robot_pos):
+def P_single(next_state, pos, act):
     """
-    Return the reward at the given robot position.
-    Does not accumulate global rewards.
+    Local stochastic transition model for a single robot.
+    With prob 1-Pe, robot attempts act.
+    With prob Pe, robot takes one of the OTHER 4 actions.
     """
-    if robot_pos in RW_loc:
-        return RW_val
-    elif robot_pos in RD_loc:
-        return RD_val
-    elif robot_pos in RS_loc:
-        return RS_val
-    else:
-        return 0  # No reward at this position
+    intended = step_single(pos, act)
 
-def P(next_state, robot_pos, a):
-    """
-    P(next_state | robot_pos, a) with local stochasticity:
-    - With prob 1 - Pe, take the commanded action a.
-    - With prob Pe, take one of the 4 other actions uniformly at random.
-    - Invalid moves (off-grid or into forbidden) result in staying in place.
-    """
-    actions = ["up", "down", "left", "right", "stay"]
-
-    def step(pos, act):
-        x, y = pos
-        nx, ny = x, y
-
-        if act == "up" and y > 0:
-            ny -= 1
-        elif act == "down" and y < 4:
-            ny += 1
-        elif act == "left" and x > 0:
-            nx -= 1
-        elif act == "right" and x < 4:
-            nx += 1
-        elif act == "stay":
-            pass  # no change
-
-        candidate = [nx, ny]
-
-        # Optional: keep this if you want forbidden states to act like walls
-        if candidate in forbidden_state:
-            return pos  # bounce back
-
-        return candidate
-
+    # Compute probability from intended movement
     prob = 0.0
-
-    # Intended move
-    intended_next = step(robot_pos, a)
-    if next_state == intended_next:
+    if next_state == intended:
         prob += 1 - Pe
 
-    # Error moves: any action except the commanded one
-    other_actions = [act for act in actions if act != a]
-    err_prob = Pe / len(other_actions)
+    # Error actions
+    other_acts = [a for a in actions if a != act]
+    err_prob = Pe / len(other_acts)  # always 4
 
-    for err_act in other_actions:
-        err_next = step(robot_pos, err_act)
+    for err in other_acts:
+        err_next = step_single(pos, err)
         if next_state == err_next:
             prob += err_prob
 
     return prob
 
+# ------------------------------
+# Joint transition model
+# ------------------------------
 
-def value_iteration():
+def P_joint(next_state, state, action_pair):
     """
-    Compute optimal value function V*(s) and policy pi*(s)
-    using Bellman optimality backups.
+    P( (pos1',pos2') | (pos1,pos2), (a1,a2) )
+    Since noise is independent, this factorizes.
     """
-    actions = ["up", "down", "left", "right", "stay"]
-    states = [[x, y] for x in range(5) for y in range(5)
-              if [x, y] not in forbidden_state]
+    (pos1, pos2) = state
+    (next1, next2) = next_state
+    (a1, a2) = action_pair
 
-    # Initialize value function V_0(s) = 0 for all s
-    V = {tuple(s): 0.0 for s in states}
-    theta = 1e-6  # convergence threshold
+    p1 = P_single(next1, pos1, a1)
+    p2 = P_single(next2, pos2, a2)
+
+    return p1 * p2
+
+# ------------------------------
+# Reward function
+# ------------------------------
+
+def reward_single(pos):
+    if list(pos) in RW_loc: return RW_val
+    if list(pos) in RD_loc: return RD_val
+    if list(pos) in RS_loc: return RS_val
+    return 0
+
+def r_joint(pos1, pos2):
+    """Reward for the joint state (pos1,pos2), including crash penalty."""
+    r = reward_single(pos1) + reward_single(pos2)
+    if pos1 == pos2:
+        r += R_crash
+    return r
+
+# ------------------------------
+# Build joint state space
+# ------------------------------
+
+valid_cells = [
+    (x, y)
+    for x in range(5)
+    for y in range(5)
+    if [x, y] not in forbidden_state
+]
+
+joint_states = [(s1, s2) for s1 in valid_cells for s2 in valid_cells]
+
+joint_actions = [(a1, a2) for a1 in actions for a2 in actions]
+# 25 joint actions
+
+# ------------------------------
+# VALUE ITERATION
+# ------------------------------
+
+def value_iteration_two_robots():
+    V = {state: 0.0 for state in joint_states}
+    theta = 1e-6
 
     while True:
         delta = 0.0
         V_new = {}
 
-        # Bellman optimality backup: V_{i+1}(s) = max_a Q(s,a)
-        for s in states:
-            s_tup = tuple(s)
-            Q_values = []
+        for s in joint_states:
+            (pos1, pos2) = s
 
-            for a in actions:
-                expected_value = 0.0
-                for s_next in states:
-                    p = P(s_next, s, a)
-                    expected_value += p * (r(s) + gamma * V[tuple(s_next)])
-                Q_values.append(expected_value)
+            best_q = -float("inf")
 
-            V_new[s_tup] = max(Q_values)  # Bellman backup
-            delta = max(delta, abs(V_new[s_tup] - V[s_tup]))
+            # Bellman max over joint actions
+            for a in joint_actions:
+                q = 0.0
+                for s_next in joint_states:
+                    p = P_joint(s_next, s, a)
+                    if p > 0:
+                        r = r_joint(*s_next)
+                        q += p * (r + gamma * V[s_next])
 
-        V = V_new.copy()
+                if q > best_q:
+                    best_q = q
 
-        # Stopping criterion
+            V_new[s] = best_q
+            delta = max(delta, abs(V_new[s] - V[s]))
+
+        V = V_new
+
         if delta < theta:
             break
 
-    # Derive Q*(s,a) and policy pi*(s)
-    Q_star = {}
+    # Derive optimal policy π*(s)
     policy = {}
 
-    for s in states:
-        s_tup = tuple(s)
-        Q_star[s_tup] = {}
+    for s in joint_states:
+        best_a = None
+        best_q = -float("inf")
 
-        best_action = None
-        best_value = -float("inf")
+        for a in joint_actions:
+            q = 0.0
+            for s_next in joint_states:
+                p = P_joint(s_next, s, a)
+                if p > 0:
+                    r = r_joint(*s_next)
+                    q += p * (r + gamma * V[s_next])
 
-        for a in actions:
-            q_val = 0.0
-            for s_next in states:
-                p = P(s_next, s, a)
-                q_val += p * (r(s) + gamma * V[tuple(s_next)])
-            Q_star[s_tup][a] = q_val
+            if q > best_q:
+                best_q = q
+                best_a = a
 
-            if q_val > best_value:
-                best_value = q_val
-                best_action = a
+        policy[s] = best_a
 
-        policy[s_tup] = best_action
+    return V, policy
 
-    return V, Q_star, policy
-
+# ------------------------------
+# RUN VALUE ITERATION
+# ------------------------------
 
 if __name__ == "__main__":
-    print("Running Value Iteration...\n")
-    V_opt, Q_opt, policy_opt = value_iteration()
+    print("Running 2-Robot Value Iteration...\n")
+    V_opt, policy_opt = value_iteration_two_robots()
 
-    print("Optimal Value Function:")
-    for y in range(5):
-        row = ""
-        for x in range(5):
-            s = (x, y)
-            if [x, y] in forbidden_state:
-                row += "  X   "
-            else:
-                row += f"{V_opt[s]:5.2f} "
-        print(row)
-
-    print("\nOptimal Policy:")
-    for y in range(5):
-        row = ""
-        for x in range(5):
-            s = (x, y)
-            if [x, y] in forbidden_state:
-                row += "X   "
-            else:
-                a = policy_opt[s]
-                row += f"{a[0].upper()}   "  # print first letter of action
-        print(row)
+    print(f"Computed {len(V_opt)} joint-state values.")
+    print(f"Example policy entry:")
+    example_state = ((0,0), (4,4))
+    print(f"State {example_state}: best action = {policy_opt[example_state]}")
+    print("")
+    print("Done.")
