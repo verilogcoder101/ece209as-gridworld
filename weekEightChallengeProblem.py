@@ -111,6 +111,14 @@ def r_joint(pos1, pos2):
         r += R_crash
     return r
 
+def reward_breakdown(pos1, pos2):
+    """Return (r1, r2, crash_penalty, total)."""
+    r1 = reward_single(pos1)
+    r2 = reward_single(pos2)
+    crash = R_crash if pos1 == pos2 else 0
+    return r1, r2, crash, (r1 + r2 + crash)
+
+
 # ------------------------------
 # Build joint state space
 # ------------------------------
@@ -187,17 +195,120 @@ def value_iteration_two_robots():
 
     return V, policy
 
+def simulate_joint_step(pos1, pos2, a1, a2):
+    """
+    Simulate one step of both robots under the same stochastic model used in P_single.
+    """
+    # Sample robot 1
+    if np.random.rand() < Pe:
+        other_acts = [a for a in actions if a != a1]
+        a1_exec = np.random.choice(other_acts)
+    else:
+        a1_exec = a1
+
+    next1 = step_single(pos1, a1_exec)
+
+    # Sample robot 2
+    if np.random.rand() < Pe:
+        other_acts = [a for a in actions if a != a2]
+        a2_exec = np.random.choice(other_acts)
+    else:
+        a2_exec = a2
+
+    next2 = step_single(pos2, a2_exec)
+
+    return next1, next2
+
+def print_two_robot_grid(pos1, pos2):
+    print("\nGrid:")
+    for y in range(5):
+        row = ""
+        for x in range(5):
+            p = (x, y)
+            if p == pos1 and p == pos2:
+                row += "R12 "  # collision
+            elif p == pos1:
+                row += "R1  "
+            elif p == pos2:
+                row += "R2  "
+            elif [x,y] in RD_loc:
+                row += "RD  "
+            elif [x,y] in RS_loc:
+                row += "RS  "
+            elif [x,y] in RW_loc:
+                row += "RW  "
+            elif [x,y] in forbidden_state:
+                row += "X   "
+            else:
+                row += ".   "
+        print(row)
+    print()
+
+def simulate_trajectory(start1, start2, policy, max_steps=30):
+    pos1 = start1
+    pos2 = start2
+
+    print("Simulating trajectory...\n")
+    print_two_robot_grid(pos1, pos2)
+
+    for t in range(max_steps):
+
+        state = (pos1, pos2)
+
+        if state not in policy:
+            print(f"\nNo policy defined for state {state}. Stopping.")
+            break
+
+        (a1, a2) = policy[state]
+
+        # simulate movement under noise
+        next1, next2 = simulate_joint_step(pos1, pos2, a1, a2)
+
+        # reward breakdown for the *new* state
+        r1, r2, crash, total = reward_breakdown(next1, next2)
+
+        print(f"t={t}")
+        print(f"  Actions chosen      : (R1: {a1}, R2: {a2})")
+        print(f"  Noise-adjusted pos  : R1→{next1}, R2→{next2}")
+        print(f"  Reward breakdown    : R1={r1}, R2={r2}, crash={crash}, total={total}")
+
+        pos1, pos2 = next1, next2
+
+        print_two_robot_grid(pos1, pos2)
+
+        if pos1 == pos2:
+            print("CRASH detected! Ending trajectory early.")
+            break
+
 # ------------------------------
 # RUN VALUE ITERATION
 # ------------------------------
 
 if __name__ == "__main__":
-    print("Running 2-Robot Value Iteration...\n")
+    print("Running 2-Robot Value Iteration...")
     V_opt, policy_opt = value_iteration_two_robots()
+    print("Done.\n")
 
-    print(f"Computed {len(V_opt)} joint-state values.")
-    print(f"Example policy entry:")
-    example_state = ((0,0), (4,4))
-    print(f"State {example_state}: best action = {policy_opt[example_state]}")
-    print("")
-    print("Done.")
+    while True:
+        print("Enter starting positions for Robot1 and Robot2 (e.g., '0 0 4 4') or q:")
+        user = input("> ").strip()
+
+        if user.lower() == "q":
+            break
+
+        try:
+            x1, y1, x2, y2 = map(int, user.split())
+        except:
+            print("Invalid. Please enter four integers: x1 y1 x2 y2")
+            continue
+
+        start1 = (x1, y1)
+        start2 = (x2, y2)
+
+        # Check validity
+        if list(start1) in forbidden_state or list(start2) in forbidden_state:
+            print("Robots cannot start in forbidden states.")
+            continue
+
+        print(f"\nStarting trajectory: R1={start1}, R2={start2}")
+        simulate_trajectory(start1, start2, policy_opt)
